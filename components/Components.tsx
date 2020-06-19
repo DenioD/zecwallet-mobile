@@ -1,6 +1,6 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, {useState, useEffect} from 'react';
-import {Button, Text, TextInput, View, Platform} from 'react-native';
+import {TouchableOpacity, Text, TextInput, View, Platform} from 'react-native';
 import {useTheme} from '@react-navigation/native';
 import Utils from '../app/utils';
 
@@ -23,7 +23,7 @@ export const UsdAmount: React.FunctionComponent<UsdAmountProps> = ({price, style
     }
   }
 
-  return <Text style={{color: colors.text, ...style}}>$ {usdString}</Text>;
+  return <Text style={{color: colors.text, ...style}}>$ {Utils.toLocaleFloat(usdString)}</Text>;
 };
 
 type ZecAmountProps = {
@@ -54,16 +54,55 @@ export const ZecAmount: React.FunctionComponent<ZecAmountProps> = ({color, style
   return (
     <View style={{...style, flexDirection: 'row', alignItems: 'baseline'}}>
       <Text style={{fontSize: size, color}}>
-        {zecSymbol} {splits.bigPart}
+        {zecSymbol} {Utils.toLocaleFloat(splits.bigPart)}
       </Text>
       <Text style={{fontSize: size / 2, color, paddingBottom: alignmentPadding}}>{splits.smallPart}</Text>
     </View>
   );
 };
 
-export const PrimaryButton: React.FunctionComponent<any> = (props) => {
+export const PrimaryButton: React.FunctionComponent<any> = ({title, disabled, onPress}) => {
   const {colors} = useTheme();
-  return <Button {...props} color={colors.primary} />;
+
+  return (
+    <TouchableOpacity
+      style={{
+        backgroundColor: disabled ? 'grey' : colors.primary,
+        padding: 10,
+        paddingLeft: 20,
+        paddingRight: 20,
+        borderRadius: 10,
+        width: 250,
+      }}
+      onPress={() => !disabled && onPress()}>
+      <Text style={{color: colors.background, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center'}}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+export const SecondaryButton: React.FunctionComponent<any> = ({title, disabled, onPress, style}) => {
+  const {colors} = useTheme();
+
+  return (
+    <TouchableOpacity
+      style={{
+        ...style,
+        borderColor: colors.text,
+        borderWidth: 1,
+        padding: 10,
+        paddingLeft: 20,
+        paddingRight: 20,
+        borderRadius: 10,
+        width: 250,
+      }}
+      onPress={() => !disabled && onPress()}>
+      <Text style={{color: colors.text, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center'}}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
 };
 
 export const BoldText: React.FunctionComponent<any> = ({style, children}) => {
@@ -84,7 +123,7 @@ export const BoldText: React.FunctionComponent<any> = ({style, children}) => {
 export const FadeText: React.FunctionComponent<any> = (props) => {
   const {colors} = useTheme();
 
-  return <Text style={{...props.style, opacity: 0.65, color: colors.text}}>{props.children}</Text>;
+  return <Text style={{opacity: 0.65, color: colors.text, ...props.style}}>{props.children}</Text>;
 };
 
 export const ErrorText: React.FunctionComponent<any> = (props) => {

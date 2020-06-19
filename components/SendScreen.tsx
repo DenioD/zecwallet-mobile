@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import QRCodeScanner from 'react-native-qrcode-scanner';
 import {View, ScrollView, Modal, Image, Alert, SafeAreaView, Keyboard} from 'react-native';
 import {
@@ -8,18 +8,22 @@ import {
   ErrorText,
   RegTextInput,
   PrimaryButton,
+  SecondaryButton,
   RegText,
   ZecAmount,
   UsdAmount,
 } from '../components/Components';
 import {Info, SendPageState, TotalBalance} from '../app/AppState';
-import {faQrcode, faCheck, faArrowAltCircleUp} from '@fortawesome/free-solid-svg-icons';
+import {faQrcode, faCheck, faArrowAltCircleUp, faInfo} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome';
 import {useTheme} from '@react-navigation/native';
 import {NavigationScreenProp} from 'react-navigation';
 import Utils from '../app/utils';
 import {TouchableOpacity} from 'react-native-gesture-handler';
 import Toast from 'react-native-simple-toast';
+import {getNumberFormatSettings} from 'react-native-localize';
+import {faBars} from '@fortawesome/free-solid-svg-icons';
+import Animated, {Easing} from 'react-native-reanimated';
 
 type ScannerProps = {
   updateToField: (address: string | null, amount: string | null, memo: string | null) => void;
@@ -31,10 +35,17 @@ function ScanScreen({updateToField, closeModal}: ScannerProps) {
   const validateAddress = (scannedAddress: string) => {
     if (Utils.isSapling(scannedAddress) || Utils.isTransparent(scannedAddress)) {
       updateToField(scannedAddress, null, null);
-
       closeModal();
     } else {
-      setError(`"${scannedAddress}" is not a valid Zcash Address`);
+      // Try to parse as a URI
+      const u = Utils.parseZcashURI(scannedAddress);
+
+      if (u) {
+        updateToField(u.address, u.amount ? Utils.maxPrecisionTrimmed(u.amount) : null, u.memo);
+        closeModal();
+      } else {
+        setError(`"${scannedAddress}" is not a valid Zcash Address`);
+      }
     }
   };
 
@@ -67,7 +78,7 @@ function ScanScreen({updateToField, closeModal}: ScannerProps) {
           }}>
           {error && <RegText style={{textAlign: 'center'}}>{error}</RegText>}
           <View style={{flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-evenly'}}>
-            <PrimaryButton style={{marginLeft: 50}} title="Cancel" onPress={doCancel} />
+            <SecondaryButton title="Cancel" onPress={doCancel} />
           </View>
         </View>
       }
@@ -130,9 +141,20 @@ const ConfirmModalContent: React.FunctionComponent<ConfirmModalProps> = ({
         backgroundColor: colors.background,
       }}>
       <ScrollView contentContainerStyle={{display: 'flex', justifyContent: 'flex-start'}}>
-        <BoldText style={{textAlign: 'center', margin: 10}}>Confirm Transaction</BoldText>
-
         <View style={{display: 'flex', alignItems: 'center', padding: 10, backgroundColor: colors.card}}>
+          <BoldText style={{textAlign: 'center', margin: 10}}>Confirm Transaction</BoldText>
+        </View>
+
+        <View
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            margin: 25,
+            padding: 10,
+            borderWidth: 1,
+            borderRadius: 10,
+            borderColor: colors.border,
+          }}>
           <BoldText style={{textAlign: 'center'}}>Sending</BoldText>
 
           <ZecAmount amtZec={sendingTotal} />
@@ -141,7 +163,10 @@ const ConfirmModalContent: React.FunctionComponent<ConfirmModalProps> = ({
         {sendPageState.toaddrs.map((to) => {
           return (
             <View key={to.id} style={{margin: 10}}>
-              <RegText>{to.to}</RegText>
+              <FadeText>To</FadeText>
+              <RegText>{Utils.splitAddressIntoChunks(to.to, 8).join(' ')}</RegText>
+
+              <FadeText style={{marginTop: 10}}>Amount</FadeText>
               <View
                 style={{
                   display: 'flex',
@@ -150,8 +175,8 @@ const ConfirmModalContent: React.FunctionComponent<ConfirmModalProps> = ({
                   alignItems: 'baseline',
                   marginTop: 5,
                 }}>
-                <ZecAmount amtZec={Utils.parseLocaleFloat(to.amount)} />
-                <UsdAmount amtZec={Utils.parseLocaleFloat(to.amount)} price={price} />
+                <ZecAmount size={18} amtZec={Utils.parseLocaleFloat(to.amount)} />
+                <UsdAmount style={{fontSize: 18}} amtZec={Utils.parseLocaleFloat(to.amount)} price={price} />
               </View>
               <RegText>{to.memo || ''}</RegText>
             </View>
@@ -159,11 +184,11 @@ const ConfirmModalContent: React.FunctionComponent<ConfirmModalProps> = ({
         })}
 
         <View style={{margin: 10}}>
-          <RegText>Fee</RegText>
+          <FadeText>Fee</FadeText>
           <View
             style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline'}}>
-            <ZecAmount amtZec={Utils.getDefaultFee()} />
-            <UsdAmount amtZec={Utils.getDefaultFee()} price={price} />
+            <ZecAmount size={18} amtZec={Utils.getDefaultFee()} />
+            <UsdAmount style={{fontSize: 18}} amtZec={Utils.getDefaultFee()} price={price} />
           </View>
         </View>
       </ScrollView>
@@ -172,12 +197,11 @@ const ConfirmModalContent: React.FunctionComponent<ConfirmModalProps> = ({
         style={{
           flexGrow: 1,
           display: 'flex',
-          flexDirection: 'row',
-          justifyContent: 'space-around',
           alignItems: 'center',
+          marginTop: 10,
         }}>
         <PrimaryButton title={'Confirm'} onPress={confirmSend} />
-        <PrimaryButton title={'Cancel'} onPress={closeModal} />
+        <SecondaryButton style={{marginTop: 20}} title={'Cancel'} onPress={closeModal} />
       </View>
     </SafeAreaView>
   );
@@ -191,6 +215,7 @@ type SendScreenProps = {
   sendTransaction: () => void;
   clearToAddrs: () => void;
   navigation: NavigationScreenProp<any>;
+  toggleMenuDrawer: () => void;
 };
 
 const SendScreen: React.FunctionComponent<SendScreenProps> = ({
@@ -201,27 +226,29 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
   sendTransaction,
   clearToAddrs,
   navigation,
+  toggleMenuDrawer,
 }) => {
   const {colors} = useTheme();
   const [qrcodeModalVisble, setQrcodeModalVisible] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [computingModalVisible, setComputingModalVisible] = useState(false);
 
-  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [titleViewHeight, setTitleViewHeight] = useState(0);
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardVisible(true); // or some other action
+      Animated.timing(slideAnim, {toValue: 0 - titleViewHeight + 25, duration: 100, easing: Easing.linear}).start();
     });
     const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardVisible(false); // or some other action
+      Animated.timing(slideAnim, {toValue: 0, duration: 100, easing: Easing.linear}).start();
     });
 
     return () => {
       keyboardDidHideListener.remove();
       keyboardDidShowListener.remove();
     };
-  }, []);
+  }, [slideAnim, titleViewHeight]);
 
   const updateToField = (address: string | null, amount: string | null, memo: string | null) => {
     const newToAddrs = sendPageState.toaddrs.slice(0);
@@ -232,6 +259,16 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
     }
 
     if (address !== null) {
+      const u = Utils.parseZcashURI(address);
+      if (u) {
+        address = u.address;
+        if (u.amount) {
+          amount = Utils.maxPrecisionTrimmed(u.amount);
+        }
+        if (u.memo) {
+          memo = u.memo;
+        }
+      }
       toAddr.to = address.replace(/[ \t\n\r]+/g, ''); // Remove spaces
     }
 
@@ -265,18 +302,23 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
         // Clear the fields
         clearToAddrs();
 
-        navigation.navigate('Transactions');
-        Toast.show(`Successfully Broadcast Tx: ${txid}`, Toast.LONG);
+        navigation.navigate('WALLET');
+        setTimeout(() => {
+          Toast.show(`Successfully Broadcast Tx: ${txid}`, Toast.LONG);
+        }, 1000);
       } catch (err) {
-        console.log('sendtx error', err);
-
-        setComputingModalVisible(false);
-        Alert.alert('Error sending Tx', `${err}`);
+        setTimeout(() => {
+          console.log('sendtx error', err);
+          Alert.alert('Error sending Tx', `${err}`, [{text: 'OK', onPress: () => setComputingModalVisible(false)}], {
+            cancelable: false,
+          });
+        }, 1000);
       }
-    }, 100);
+    });
   };
 
   const spendable = totalBalance.transparentBal + totalBalance.verifiedPrivate;
+  const stillConfirming = spendable !== totalBalance.total;
 
   const setMaxAmount = () => {
     updateToField(null, Utils.maxPrecisionTrimmed(spendable - Utils.getDefaultFee()), null);
@@ -299,7 +341,10 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
 
   var amountValidationState: number;
   if (toaddr.amount !== '') {
-    if (Utils.parseLocaleFloat(toaddr.amount) > 0 && Utils.parseLocaleFloat(toaddr.amount) <= spendable + Utils.getDefaultFee()) {
+    if (
+      Utils.parseLocaleFloat(toaddr.amount) > 0 &&
+      Utils.parseLocaleFloat(toaddr.amount) <= spendable - Utils.getDefaultFee()
+    ) {
       amountValidationState = 1;
     } else {
       amountValidationState = -1;
@@ -309,6 +354,7 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
   }
 
   const sendButtonEnabled = addressValidationState === 1 && amountValidationState === 1;
+  const {decimalSeparator} = getNumberFormatSettings();
 
   return (
     <View
@@ -355,14 +401,31 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
           flexDirection: 'column',
           justifyContent: 'flex-start',
         }}>
-        {isKeyboardVisible && <View style={{paddingBottom: 25, backgroundColor: colors.card}} />}
-        {!isKeyboardVisible && (
-          <View style={{display: 'flex', alignItems: 'center', paddingBottom: 25, backgroundColor: colors.card}}>
+        <Animated.View style={{marginTop: slideAnim}}>
+          <View
+            onLayout={(e) => {
+              const {height} = e.nativeEvent.layout;
+              setTitleViewHeight(height);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              paddingBottom: 25,
+              backgroundColor: colors.card,
+              zIndex: -1,
+            }}>
             <RegText style={{marginTop: 5, padding: 5}}>Spendable</RegText>
             <ZecAmount size={36} amtZec={spendable} />
             <UsdAmount style={{marginTop: 5}} price={zecPrice} amtZec={spendable} />
           </View>
-        )}
+        </Animated.View>
+
+        <Animated.View style={{backgroundColor: '#353535', padding: 10, position: 'absolute', marginTop: slideAnim}}>
+          <TouchableOpacity onPress={toggleMenuDrawer}>
+            <FontAwesomeIcon icon={faBars} size={20} color={'#ffffff'} />
+          </TouchableOpacity>
+        </Animated.View>
+
         <View style={{display: 'flex', alignItems: 'center', marginTop: -25}}>
           <Image source={require('../assets/img/logobig.png')} style={{width: 50, height: 50, resizeMode: 'contain'}} />
         </View>
@@ -373,11 +436,18 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
             {addressValidationState === 1 && <FontAwesomeIcon icon={faCheck} color="green" />}
             {addressValidationState === -1 && <ErrorText>Invalid Address!</ErrorText>}
           </View>
-          <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'flex-start'}}>
+          <View
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              justifyContent: 'flex-start',
+              borderBottomColor: '#ffffff',
+              borderBottomWidth: 2,
+            }}>
             <RegTextInput
-              placeholder="ZEC z-address or t-address"
+              placeholder="z-address or t-address"
               placeholderTextColor="#777777"
-              style={{flexGrow: 1, maxWidth: '90%', borderBottomColor: '#ffffff', borderBottomWidth: 2}}
+              style={{flexGrow: 1, maxWidth: '90%'}}
               value={sendPageState.toaddrs[0].to}
               onChangeText={(text: string) => updateToField(text, null, null)}
             />
@@ -393,12 +463,20 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
             )}
             {amountValidationState === -1 && <ErrorText>Invalid Amount!</ErrorText>}
           </View>
-          <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'flex-start'}}>
+
+          <View
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              justifyContent: 'flex-start',
+              borderBottomColor: '#ffffff',
+              borderBottomWidth: 2,
+            }}>
             <RegTextInput
-              placeholder="0.0"
+              placeholder={`0${decimalSeparator}0`}
               placeholderTextColor="#777777"
               keyboardType="numeric"
-              style={{flexGrow: 1, maxWidth: '90%', borderBottomColor: '#ffffff', borderBottomWidth: 2}}
+              style={{flexGrow: 1, maxWidth: '90%'}}
               value={sendPageState.toaddrs[0].amount.toString()}
               onChangeText={(text: string) => updateToField(null, text, null)}
             />
@@ -406,6 +484,20 @@ const SendScreen: React.FunctionComponent<SendScreenProps> = ({
               <FontAwesomeIcon style={{margin: 5}} size={24} icon={faArrowAltCircleUp} color={colors.text} />
             </TouchableOpacity>
           </View>
+          {stillConfirming && (
+            <View
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                marginTop: 5,
+                backgroundColor: colors.card,
+                padding: 5,
+                borderRadius: 10,
+              }}>
+              <FontAwesomeIcon icon={faInfo} size={14} color={colors.primary} />
+              <FadeText>Some funds are still confirming</FadeText>
+            </View>
+          )}
 
           {memoEnabled && (
             <>
